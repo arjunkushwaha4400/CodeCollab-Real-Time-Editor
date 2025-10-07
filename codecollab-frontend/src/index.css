@@ -1,0 +1,23 @@
+:root {
+  --bs-dark-rgb: 13, 17, 23;
+  --bs-body-bg: #0d1117;
+  --bs-body-color: #c9d1d9;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+  sans-serif;
+}
+
+.loading-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  gap: 1rem;
+  background-color: var(--bs-body-bg);
+  color: var(--bs-body-color);
+}

@@ -1,0 +1,18 @@
+server:
+  port: 8088
+
+spring:
+  application:
+    name: AI-SERVICE
+
+eureka:
+  instance:
+    hostname: localhost
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka
+
+google:
+  gemini:
+    api-key: <PASTE_YOUR_API_SECRET_KEY_HERE>
+    model: <PASTE_NAME_OF_YOUR_DESIRE_MODEL>
