@@ -39,7 +39,49 @@ function EditorPage() {
     const [stdin, setStdin] = useState('');
 
 
-    function handleEditorDidMount(editor, monaco) { editorRef.current = editor; }
+    const setupSnippets = (monaco) => {
+        monaco.languages.registerCompletionItemProvider('java', {
+            provideCompletionItems: () => {
+                const suggestions = [
+                    {
+                        label: 'sysout',
+                        kind: monaco.languages.CompletionItemKind.Snippet,
+                        insertText: 'System.out.println(${1});$0',
+                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                        documentation: 'Prints a string to the console.',
+                    },
+                    {
+                        label: 'main',
+                        kind: monaco.languages.CompletionItemKind.Snippet,
+                        insertText: [
+                            'public static void main(String[] args) {',
+                            '\t${1}',
+                            '}$0'
+                        ].join('\n'),
+                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                        documentation: 'Creates the main method.',
+                    },
+                    {
+                        label: 'for',
+                        kind: monaco.languages.CompletionItemKind.Snippet,
+                        insertText: [
+                            'for (int ${1:i} = 0; ${1:i} < ${2:length}; ${1:i}++) {',
+                            '\t${3}',
+                            '}$0'
+                        ].join('\n'),
+                        insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                        documentation: 'Creates a for-loop.',
+                    }
+                ];
+                return { suggestions: suggestions };
+            },
+        });
+    };
+
+    function handleEditorDidMount(editor, monaco) {
+        editorRef.current = editor;
+        setupSnippets(monaco);
+    }
 
     const fetchSessionDetails = useCallback(async (token) => {
         try {
