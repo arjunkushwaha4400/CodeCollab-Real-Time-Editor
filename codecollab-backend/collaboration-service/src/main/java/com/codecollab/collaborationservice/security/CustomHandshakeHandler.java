@@ -1,5 +1,7 @@
 package com.codecollab.collaborationservice.security;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketHandler;
@@ -12,18 +14,40 @@ import java.util.UUID;
 @Component
 public class CustomHandshakeHandler extends DefaultHandshakeHandler {
 
+    @Autowired
+    private JwtUtil jwtUtil;
+
     @Override
     protected Principal determineUser(ServerHttpRequest request, WebSocketHandler wsHandler, Map<String, Object> attributes) {
-        // Get the username from the header added by our API Gateway
-        String username = request.getHeaders().getFirst("X-Authenticated-Username");
+        String token = extractTokenFromRequest(request);
 
-        if (username != null && !username.isBlank()) {
-            System.out.println("WebSocket handshake successful for user: " + username);
+        if (token != null && jwtUtil.isTokenValid(token)) {
+            String username = jwtUtil.extractUsername(token);
+            System.out.println("WebSocket handshake AUTHENTICATED for user: " + username);
             return new UserPrincipal(username);
         }
 
-        // If no username, assign a random guest ID (or you could reject the connection)
-        System.out.println("WebSocket handshake for anonymous user.");
+        System.out.println("WebSocket handshake FAILED to authenticate. Falling back to anonymous.");
         return new UserPrincipal("guest-" + UUID.randomUUID());
+    }
+
+    private String extractTokenFromRequest(ServerHttpRequest request) {
+        // 1. Check query parameters first
+        String query = request.getURI().getQuery();
+        if (query != null) {
+            for (String param : query.split("&")) {
+                if (param.startsWith("token=")) {
+                    return param.substring(6); // Return token after "token="
+                }
+            }
+        }
+
+        // 2. Check Authorization header as fallback
+        String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return authHeader.substring(7);
+        }
+
+        return null;
     }
 }

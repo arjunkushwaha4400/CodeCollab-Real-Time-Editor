@@ -91,3 +91,16 @@
   white-space: pre-wrap;
   border: none;
 }
+
+.remote-cursor {
+  position: absolute;
+  width: 2px !important;
+  /* The background color will be set dynamically via JS */
+}
+
+/* Style for a remote user's text selection */
+.remote-selection {
+  position: absolute;
+  /* The background color will be set dynamically via JS */
+  opacity: 0.3;
+}

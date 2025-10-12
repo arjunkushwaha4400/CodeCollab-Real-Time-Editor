@@ -13,8 +13,18 @@ export const Role = {
     EDITOR: 'EDITOR',
     VIEWER: 'VIEWER'
 };
+const userColors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FED766', '#F0B37E', '#8A2BE2'];
+const getUserColor = (username) => {
+    let hash = 0;
+    for (let i = 0; i < username.length; i++) {
+        hash = username.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return userColors[Math.abs(hash) % userColors.length];
+};
 
 function EditorPage() {
+    const [remoteSelections, setRemoteSelections] = useState({});
+    const oldDecorationsRef = useRef([]);
     const { sessionId } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
@@ -35,6 +45,7 @@ function EditorPage() {
     const [chatMessages, setChatMessages] = useState([]);
     const stompClientRef = useRef(null);
     const editorRef = useRef(null);
+    const monacoRef = useRef(null);
 
     const [stdin, setStdin] = useState('');
 
@@ -78,10 +89,64 @@ function EditorPage() {
         });
     };
 
-    function handleEditorDidMount(editor, monaco) {
+    const handleEditorDidMount = (editor, monaco) => {
         editorRef.current = editor;
+        monacoRef.current = monaco;
         setupSnippets(monaco);
-    }
+
+        let throttleTimer;
+
+        const publishCursorUpdate = (data, type) => {
+            if (stompClientRef.current?.connected && currentUser) {
+                clearTimeout(throttleTimer);
+                throttleTimer = setTimeout(() => {
+                    const cursorData = {
+                        username: currentUser, // Include username in the payload
+                        startLineNumber: data.startLineNumber,
+                        startColumn: data.startColumn,
+                        endLineNumber: data.endLineNumber,
+                        endColumn: data.endColumn,
+                        selectionStartLineNumber: data.selectionStartLineNumber || data.startLineNumber,
+                        selectionStartColumn: data.selectionStartColumn || data.startColumn,
+                        positionLineNumber: data.positionLineNumber || data.startLineNumber,
+                        positionColumn: data.positionColumn || data.startColumn
+                    };
+
+                    console.log(`📤 Publishing ${type} for user ${currentUser}:`, cursorData);
+
+                    stompClientRef.current.publish({
+                        destination: `/app/cursor/${sessionId}`,
+                        body: JSON.stringify(cursorData)
+                    });
+                }, 100);
+            }
+        };
+
+        editor.onDidChangeCursorPosition(e => {
+            publishCursorUpdate({
+                startLineNumber: e.position.lineNumber,
+                startColumn: e.position.column,
+                endLineNumber: e.position.lineNumber,
+                endColumn: e.position.column,
+                positionLineNumber: e.position.lineNumber,
+                positionColumn: e.position.column
+            });
+        });
+
+        editor.onDidChangeCursorSelection(e => {
+            const selection = e.selection;
+            publishCursorUpdate({
+                startLineNumber: selection.startLineNumber,
+                startColumn: selection.startColumn,
+                endLineNumber: selection.endLineNumber,
+                endColumn: selection.endColumn,
+                selectionStartLineNumber: selection.selectionStartLineNumber,
+                selectionStartColumn: selection.selectionStartColumn,
+                positionLineNumber: selection.positionLineNumber,
+                positionColumn: selection.positionColumn
+            });
+        });
+    };
 
     const fetchSessionDetails = useCallback(async (token) => {
         try {
@@ -124,9 +189,16 @@ function EditorPage() {
 
     const connectToWebSocket = useCallback((user, token, initialDetails) => {
         if (stompClientRef.current?.active) return;
-        const socket = new SockJS('http://localhost:8084/ws');
+        if (!token) {
+            console.error("No token provided for WebSocket connection");
+            return;
+        }
+        const socket = new SockJS(`http://localhost:8084/ws?token=${encodeURIComponent(token)}`);
+        console.log("Connecting WebSocket with token:", token); // Debug log
+
         const stompClient = new Client({
             webSocketFactory: () => socket,
+
             connectHeaders: { Authorization: `Bearer ${token}` },
             onConnect: () => {
                 setIsConnected(true);
@@ -223,11 +295,178 @@ function EditorPage() {
                 });
                 stompClient.subscribe(`/topic/chat/${sessionId}`, msg => setChatMessages(prev => [...prev, JSON.parse(msg.body)]));
                 stompClient.publish({ destination: `/app/chat/${sessionId}`, body: JSON.stringify({ sender: user, content: 'has joined!', type: 'JOIN' }) });
+                stompClient.subscribe(`/topic/cursor/${sessionId}`, msg => {
+                    const cursorData = JSON.parse(msg.body);
+                    console.log('🎯 Received cursor data:', cursorData);
+                    // Ignore our own cursor updates
+                    if (cursorData.username !== user) {
+                        setRemoteSelections(prev => ({
+                            ...prev,
+                            [cursorData.username]: {
+                                startLineNumber: cursorData.startLineNumber,
+                                startColumn: cursorData.startColumn,
+                                endLineNumber: cursorData.endLineNumber || cursorData.startLineNumber,
+                                endColumn: cursorData.endColumn || cursorData.startColumn,
+                                selectionStartLineNumber: cursorData.selectionStartLineNumber || cursorData.startLineNumber,
+                                selectionStartColumn: cursorData.selectionStartColumn || cursorData.startColumn,
+                                positionLineNumber: cursorData.positionLineNumber || cursorData.startLineNumber,
+                                positionColumn: cursorData.positionColumn || cursorData.startColumn,
+                                username: cursorData.username,
+                                color: getUserColor(cursorData.username)
+                            }
+                        }));
+                    }
+                });
             },
         });
         stompClient.activate();
         stompClientRef.current = stompClient;
     }, [sessionId]);
+
+    useEffect(() => {
+        if (!editorRef.current || !monacoRef.current || !sessionDetails) return;
+
+        console.log('🎨 Applying decorations for remote selections:', remoteSelections);
+
+        const decorations = Object.entries(remoteSelections)
+            .filter(([username, selection]) =>
+                sessionDetails.participants[username] &&
+                username !== currentUser
+            )
+            .map(([username, selection]) => {
+                const sanitizedUsername = username.replace(/[^a-zA-Z0-9]/g, '');
+                const userColor = getUserColor(username);
+
+                // Check if it's a cursor (single position) or selection
+                const isCursor = selection.startLineNumber === selection.endLineNumber &&
+                    selection.startColumn === selection.endColumn;
+
+                if (isCursor) {
+                    // Create cursor decoration with username label
+                    return {
+                        range: new monacoRef.current.Range(
+                            selection.startLineNumber,
+                            selection.startColumn,
+                            selection.endLineNumber,
+                            selection.endColumn
+                        ),
+                        options: {
+                            className: `remote-cursor-${sanitizedUsername}`,
+                            hoverMessage: { value: `**${username}**` }, // Tooltip on hover
+                            stickiness: 1, // Never shrink when typing at edges
+                            // This creates the inline widget with username
+                            after: {
+                                content: username,
+                                inlineClassName: `remote-cursor-label-${sanitizedUsername}`,
+                                margin: '0 0 0 2px' // Add some spacing
+                            }
+                        }
+                    };
+                } else {
+                    // Create selection decoration
+                    return {
+                        range: new monacoRef.current.Range(
+                            selection.startLineNumber,
+                            selection.startColumn,
+                            selection.endLineNumber,
+                            selection.endColumn
+                        ),
+                        options: {
+                            className: `remote-selection-${sanitizedUsername}`,
+                            hoverMessage: { value: `**${username}**` }, // Tooltip on hover
+                            stickiness: 1
+                        }
+                    };
+                }
+            });
+
+        console.log('🖌️ Creating decorations:', decorations);
+
+        // Apply decorations
+        oldDecorationsRef.current = editorRef.current.deltaDecorations(
+            oldDecorationsRef.current,
+            decorations
+        );
+
+        // Create dynamic styles
+        const styleId = 'dynamic-cursor-styles';
+        let styleElement = document.getElementById(styleId);
+        if (!styleElement) {
+            styleElement = document.createElement('style');
+            styleElement.id = styleId;
+            document.head.appendChild(styleElement);
+        }
+
+        // Generate CSS for all remote users
+        const styles = Object.entries(remoteSelections)
+            .filter(([username]) => sessionDetails.participants[username] && username !== currentUser)
+            .map(([username]) => {
+                const sanitizedUsername = username.replace(/[^a-zA-Z0-9]/g, '');
+                const userColor = getUserColor(username);
+
+                return `
+                /* Cursor line */
+                .remote-cursor-${sanitizedUsername} {
+                    border-left: 2px solid ${userColor} !important;
+                    border-right: none !important;
+                    background-color: transparent !important;
+                    width: 0px !important;
+                    margin-left: -1px !important;
+                }
+                
+                /* Username label */
+                .remote-cursor-label-${sanitizedUsername} {
+                    color: white !important;
+                    background-color: ${userColor} !important;
+                    padding: 1px 6px !important;
+                    border-radius: 10px !important;
+                    margin-left: 4px !important;
+                    font-size: 10px !important;
+                    font-weight: bold !important;
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif !important;
+                    position: relative !important;
+                    z-index: 1000 !important;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.3) !important;
+                    border: 1px solid ${userColor}80 !important;
+                    white-space: nowrap !important;
+                }
+                
+                /* Selection background */
+                .remote-selection-${sanitizedUsername} {
+                    background-color: ${userColor}30 !important;
+                    border: 1px solid ${userColor} !important;
+                }
+                
+                /* Optional: Add a small caret above the username */
+                .remote-cursor-label-${sanitizedUsername}::before {
+                    content: '' !important;
+                    position: absolute !important;
+                    top: -4px !important;
+                    left: 8px !important;
+                    width: 0 !important;
+                    height: 0 !important;
+                    border-left: 4px solid transparent !important;
+                    border-right: 4px solid transparent !important;
+                    border-bottom: 4px solid ${userColor} !important;
+                }
+            `;
+            })
+            .join('\n');
+
+        styleElement.innerHTML = styles;
+
+    }, [remoteSelections, sessionDetails, currentUser]);
+
+    useEffect(() => {
+        console.log('📝 Editor ref:', editorRef.current);
+        console.log('🔧 Monaco ref:', monacoRef.current);
+        console.log('👥 Session details:', sessionDetails);
+    }, [editorRef.current, monacoRef.current, sessionDetails]);
+
+    useEffect(() => {
+        console.log('🔍 Remote selections state updated:', remoteSelections);
+    }, [remoteSelections]);
+
 
 
     const handleRequestToJoin = useCallback(async (token, user, currentDetails) => {
