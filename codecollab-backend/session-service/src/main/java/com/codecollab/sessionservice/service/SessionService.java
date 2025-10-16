@@ -2,6 +2,7 @@ package com.codecollab.sessionservice.service;
 
 import com.codecollab.sessionservice.SessionServiceApplication;
 import com.codecollab.sessionservice.client.CollaborationServiceClient;
+import com.codecollab.sessionservice.controller.CreateSessionRequest;
 import com.codecollab.sessionservice.dto.NotificationDTO;
 import com.codecollab.sessionservice.exception.SessionNotFoundException;
 import com.codecollab.sessionservice.exception.UnauthorizedException;
@@ -31,12 +32,15 @@ public class SessionService {
     private static final Logger log = LoggerFactory.getLogger(SessionServiceApplication.class);
 
     @Transactional
-    public CodeSession createNewSession(String ownerUsername, boolean isPrivate) {
+    public CodeSession createNewSession(String ownerUsername, CreateSessionRequest request) {
+        String boilerplate = getBoilerplateForLanguage(request.getLanguage());
+
         CodeSession newSession = CodeSession.builder()
                 .uniqueId(UUID.randomUUID().toString())
-                .codeContent("// Welcome to your new CodeCollab session!")
+                .codeContent(boilerplate)
                 .ownerUsername(ownerUsername)
-                .isPrivate(isPrivate)
+                .isPrivate(request.isPrivate())
+                .language(request.getLanguage())
                 .build();
 
         newSession.getParticipants().put(ownerUsername, Role.OWNER);
@@ -286,6 +290,33 @@ public class SessionService {
         codeSessionRepository.delete(session);
 
         log.info("Session {} deleted successfully", uniqueId);
+    }
+
+    private String getBoilerplateForLanguage(String language) {
+        return switch (language.toLowerCase()) {
+            case "java" -> """
+                    public class Main {
+                        public static void main(String[] args) {
+                            System.out.println("Hello, Java!");
+                        }
+                    }
+                    """;
+            case "python" -> """
+                    def main():
+                        print("Hello, Python!")
+
+                    if __name__ == "__main__":
+                        main()
+                    """;
+            case "javascript" -> """
+                    function main() {
+                        console.log("Hello, JavaScript!");
+                    }
+
+                    main();
+                    """;
+            default -> "// Welcome to your new CodeCollab session!";
+        };
     }
 
 

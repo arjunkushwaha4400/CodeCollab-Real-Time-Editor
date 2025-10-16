@@ -23,6 +23,7 @@ const getUserColor = (username) => {
 };
 
 function EditorPage() {
+    const [language, setLanguage] = useState('java');
     const [remoteSelections, setRemoteSelections] = useState({});
     const oldDecorationsRef = useRef([]);
     const { sessionId } = useParams();
@@ -167,7 +168,7 @@ function EditorPage() {
             return data;
         } catch (error) {
             console.error("❌ DEBUG - Error fetching session:", error);
-            alert("Session not found or an error occurred.");
+            // alert("Session not found or an error occurred.");
             navigate('/');
         }
     }, [sessionId, navigate]);
@@ -554,8 +555,12 @@ function EditorPage() {
 
         // Remove location.state dependency and always check permissions
         const checkPermissionsAndConnect = async () => {
+            const passedData = location.state?.sessionData;
             const details = await fetchSessionDetails(token);
             if (!details) return;
+            setLanguage(details.language);
+
+            if (passedData) setSessionDetails(details);
 
             const role = details.participants[user];
             setUserRole(role);
@@ -641,7 +646,24 @@ function EditorPage() {
 
     const handleEditorChange = (value) => { if (stompClientRef.current?.connected) stompClientRef.current.publish({ destination: `/app/code/${sessionId}`, body: JSON.stringify({ content: value }) }); };
 
-    const handleRunCode = () => { setIsExecuting(true); setExecutionOutput("Executing..."); setActiveTab('output'); fetch('http://localhost:8080/execution-service/api/execute', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('jwt_token')}` }, body: JSON.stringify({ sessionId, language: 'java', code: codeContent,stdin: stdin }), }).catch(error => { setExecutionOutput(`Error: ${error.message}`); setIsExecuting(false); }); };
+    const handleRunCode = () => {
+        setIsExecuting(true);
+        setExecutionOutput("Executing...");
+        setActiveTab('output');
+        fetch('http://localhost:8080/execution-service/api/execute',
+            { method: 'POST',
+                headers: {
+                'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('jwt_token')}` },
+                body: JSON.stringify({
+                    sessionId,
+                    language: language,
+                    code: codeContent,
+                    stdin: stdin
+                }),
+            }).catch(error => {
+                setExecutionOutput(`Error: ${error.message}`);
+                setIsExecuting(false); });
+    };
 
     const handleSendMessage = (message) => { if (message.trim() && stompClientRef.current?.connected) stompClientRef.current.publish({ destination: `/app/chat/${sessionId}`, body: JSON.stringify({ sender: currentUser, content: message, type: 'CHAT' }) }); };
 
@@ -724,7 +746,7 @@ function EditorPage() {
                     });
                 }
 
-                alert("You have left the session successfully.");
+                // alert("You have left the session successfully.");
                 navigate('/'); // Redirect to home page
 
             } else if (response.status === 403) {
@@ -779,7 +801,7 @@ function EditorPage() {
                     });
                 }
 
-                alert("Session deleted successfully.");
+                // alert("Session deleted successfully.");
                 navigate('/'); // Redirect to home page
             } else {
                 const errorData = await response.json();
@@ -920,7 +942,9 @@ function EditorPage() {
                 <div className="editor-page-container">
                     <div className="editor-container">
                         <div className="controls p-2 border-bottom border-secondary bg-dark d-flex justify-content-between align-items-center">
-                            <div><span>Session: <strong>{sessionId.substring(0)}</strong></span></div>
+                            <div>
+                                <span>Session: <strong>{sessionId.substring(0)}</strong> | Language: <strong>{language.charAt(0).toUpperCase() + language.slice(1)}</strong></span>
+                            </div>
                             <div>
                                 {isOwner && <Button variant="outline-warning" size="sm" onClick={handleSaveSnapshot} disabled={isHistoryLoading} className="me-2">{isHistoryLoading ? <Spinner as="span" size="sm" animation="border" /> : '💾 Save'}</Button>}
                                 <Button variant="outline-info" size="sm" onClick={handleExplainCode} disabled={isExplaining || isExecuting} className="me-2">{isExplaining ? <Spinner as="span" size="sm" animation="border" /> : '✨ Explain'}</Button>
@@ -950,7 +974,14 @@ function EditorPage() {
                                 )}
                             </div>
                         </div>
-                        <Editor height="calc(100% - 49px)" theme="vs-dark" language="java" value={codeContent} onChange={handleEditorChange} onMount={handleEditorDidMount} options={{ automaticLayout: true, wordWrap: 'on', readOnly: userRole === Role.VIEWER }} />
+                        <Editor
+                            height="calc(100% - 49px)"
+                            theme="vs-dark"
+                            language={language}
+                            value={codeContent}
+                            onChange={handleEditorChange}
+                            onMount={handleEditorDidMount}
+                            options={{ automaticLayout: true, wordWrap: 'on', readOnly: userRole === Role.VIEWER }} />
                     </div>
                     <div className="side-panel">
                         <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k)} id="side-panel-tabs" className="mb-0 flex-shrink-0" fill>

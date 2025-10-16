@@ -7,4 +7,5 @@ import lombok.Data;
 public class CreateSessionRequest {
     @JsonProperty("isPrivate")
     private boolean isPrivate;
+    private String language;
 }

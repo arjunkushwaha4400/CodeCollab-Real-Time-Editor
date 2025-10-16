@@ -28,16 +28,15 @@ public class CodeExecutionService {
     public CodeExecutionResponse executeCode(String code, String language, String stdin) throws Exception {
         Path tempDir = Files.createTempDirectory("codecollab-" + UUID.randomUUID());
 
-        // --- NEW: Write the standard input to a file called input.txt ---
         File inputFile = new File(tempDir.toFile(), "input.txt");
         try (FileWriter writer = new FileWriter(inputFile)) {
             writer.write(stdin != null ? stdin : "");
         }
 
+        // --- THIS IS THE NEW MULTI-LANGUAGE LOGIC ---
         String sourceFileName;
         String dockerfileContent;
 
-        // --- UPDATED: The CMD in each Dockerfile now uses input redirection ---
         switch (language.toLowerCase()) {
             case "java":
                 sourceFileName = "Main.java";
@@ -49,7 +48,24 @@ public class CodeExecutionService {
                     CMD sh -c "java Main < input.txt"
                     """;
                 break;
-            // You can add other languages here in the future
+            case "python":
+                sourceFileName = "main.py";
+                dockerfileContent = """
+                    FROM python:3.11-slim
+                    WORKDIR /app
+                    COPY . .
+                    CMD sh -c "python main.py < input.txt"
+                    """;
+                break;
+            case "javascript":
+                sourceFileName = "index.js";
+                dockerfileContent = """
+                    FROM node:18-slim
+                    WORKDIR /app
+                    COPY . .
+                    CMD sh -c "node index.js < input.txt"
+                    """;
+                break;
             default:
                 FileUtils.deleteDirectory(tempDir.toFile());
                 throw new IllegalArgumentException("Unsupported language: " + language);
@@ -65,7 +81,7 @@ public class CodeExecutionService {
             writer.write(dockerfileContent);
         }
 
-        // The rest of the Docker execution logic is the same as our last working version
+        // The rest of the Docker execution logic is the same and requires no changes
         String imageId = null;
         String containerId = null;
         StringBuilder buildLog = new StringBuilder();
@@ -73,7 +89,6 @@ public class CodeExecutionService {
             BuildImageResultCallback callback = new BuildImageResultCallback(buildLog);
             dockerClient.buildImageCmd(tempDir.toFile()).exec(callback);
             boolean completed = callback.awaitCompletion(60, TimeUnit.SECONDS);
-
             if (!completed) return new CodeExecutionResponse("", "Docker image build timed out.");
             imageId = callback.getImageId();
             if (imageId == null) return new CodeExecutionResponse("", buildLog.toString());
@@ -81,14 +96,12 @@ public class CodeExecutionService {
             HostConfig hostConfig = new HostConfig().withMemory(128 * 1024 * 1024L).withCpuCount(1L);
             CreateContainerResponse containerResponse = dockerClient.createContainerCmd(imageId).withHostConfig(hostConfig).exec();
             containerId = containerResponse.getId();
-
             dockerClient.startContainerCmd(containerId).exec();
             dockerClient.waitContainerCmd(containerId).start().awaitStatusCode(10, TimeUnit.SECONDS);
 
             StringBuilder output = new StringBuilder();
             StringBuilder error = new StringBuilder();
             LogCallback logCallback = new LogCallback(output, error);
-
             dockerClient.logContainerCmd(containerId).withStdOut(true).withStdErr(true).exec(logCallback).awaitCompletion(5, TimeUnit.SECONDS);
             return new CodeExecutionResponse(output.toString(), error.toString());
 

@@ -9,6 +9,7 @@ function HomePage() {
     const [isPrivate, setIsPrivate] = useState(true);
     const [currentUser, setCurrentUser] = useState(null);
     const navigate = useNavigate();
+    const [initialLanguage, setInitialLanguage] = useState('java');
 
     useEffect(() => {
         const token = localStorage.getItem('jwt_token');
@@ -36,7 +37,7 @@ function HomePage() {
         fetch('http://localhost:8080/session-service/api/sessions', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`,'X-Authenticated-Username': username },
-            body: JSON.stringify({ isPrivate: isPrivate })
+            body: JSON.stringify({ isPrivate: isPrivate , language: initialLanguage})
         })
             .then(res => res.ok ? res.json() : Promise.reject(new Error('Failed to create session')))
             .then(data => {
@@ -69,6 +70,14 @@ function HomePage() {
                                         <Card.Title as="h2">Create a New Session</Card.Title>
                                         <Card.Text className="text-white-50">Start a new public or private session.</Card.Text>
                                     </div>
+                                    <Form.Group className="mt-3">
+                                        <Form.Label>Select Language</Form.Label>
+                                        <Form.Select value={initialLanguage} onChange={e => setInitialLanguage(e.target.value)} className="bg-dark text-white border-secondary">
+                                            <option value="java">Java</option>
+                                            <option value="python">Python</option>
+                                            <option value="javascript">JavaScript</option>
+                                        </Form.Select>
+                                    </Form.Group>
                                     <Form.Check type="switch" id="private-session-switch" label="Make this session private" checked={isPrivate} onChange={(e) => setIsPrivate(e.target.checked)} className="mt-3" />
                                     <Button variant="primary" size="lg" onClick={handleCreateSession} disabled={isLoading} className="mt-4">
                                         {isLoading ? <><Spinner as="span" animation="border" size="sm" /> Creating...</> : 'Create & Join Session'}

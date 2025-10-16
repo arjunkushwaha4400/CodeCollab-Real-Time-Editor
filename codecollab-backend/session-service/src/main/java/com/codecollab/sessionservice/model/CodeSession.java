@@ -32,6 +32,8 @@ public class CodeSession {
     @JsonProperty("isPrivate")
     private boolean isPrivate;
 
+    private String language;
+
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "session_participants")
     @MapKeyColumn(name = "username")

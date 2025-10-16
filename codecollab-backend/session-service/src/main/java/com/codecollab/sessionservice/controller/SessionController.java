@@ -24,7 +24,7 @@ public class SessionController {
     public ResponseEntity<CodeSession> createSession(
             @RequestHeader("X-Authenticated-Username") String username,
             @RequestBody CreateSessionRequest request) {
-        CodeSession createdSession = sessionService.createNewSession(username, request.isPrivate());
+        CodeSession createdSession = sessionService.createNewSession(username, request);
         return ResponseEntity.status(201).body(createdSession);
     }
 
