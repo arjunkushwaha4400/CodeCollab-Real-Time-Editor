@@ -104,3 +104,47 @@
   /* The background color will be set dynamically via JS */
   opacity: 0.3;
 }
+
+ Add this to your main CSS file
+.comment-glyph {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path fill="%234CAF50" d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 13A6 6 0 1 1 8 2a6 6 0 0 1 0 12z"/><path fill="%234CAF50" d="M11 7H5v1h6V7zm0 3H5v1h6v-1z"/></svg>') !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  cursor: pointer !important;
+}
+
+.comment-glyph:hover {
+  background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><path fill="%2381C784" d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 13A6 6 0 1 1 8 2a6 6 0 0 1 0 12z"/><path fill="%2381C784" d="M11 7H5v1h6V7zm0 3H5v1h6v-1z"/></svg>') !important;
+}
+
+/* Comment Thread Modal Styling */
+.comment-thread-modal .modal-content {
+  border: 1px solid #444;
+  border-radius: 8px;
+}
+
+.comment-thread-modal .modal-header {
+  border-bottom: 1px solid #444;
+}
+
+.comment-thread-modal .modal-body {
+  background: #1e1e1e;
+}
+
+/* Scrollbar styling for comments */
+.comment-thread-modal ::-webkit-scrollbar {
+  width: 6px;
+}
+
+.comment-thread-modal ::-webkit-scrollbar-track {
+  background: #2d2d2d;
+}
+
+.comment-thread-modal ::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 3px;
+}
+
+.comment-thread-modal ::-webkit-scrollbar-thumb:hover {
+  background: #777;
+}

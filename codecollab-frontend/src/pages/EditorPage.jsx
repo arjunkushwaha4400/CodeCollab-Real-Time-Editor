@@ -7,6 +7,7 @@ import Editor from '@monaco-editor/react';
 import { Button, Tab, Tabs, Spinner, Toast, ToastContainer, ListGroup,Form } from 'react-bootstrap';
 import ParticipantsPanel from '../components/ParticipantsPanel';
 import ChatPanel from '../components/ChatPanel';
+import CommentThreadPanel from '../components/CommentThreadPanel';
 
 export const Role = {
     OWNER: 'OWNER',
@@ -23,6 +24,7 @@ const getUserColor = (username) => {
 };
 
 function EditorPage() {
+    const [activeCommentThread, setActiveCommentThread] = useState(null);
     const [language, setLanguage] = useState('java');
     const [remoteSelections, setRemoteSelections] = useState({});
     const oldDecorationsRef = useRef([]);
@@ -123,6 +125,41 @@ function EditorPage() {
             }
         };
 
+        editor.addAction({
+            id: 'add-comment',
+            label: 'Add Comment',
+            contextMenuGroupId: 'navigation',
+            contextMenuOrder: 1.5,
+            run: (ed) => {
+                const position = ed.getPosition();
+                const content = prompt("Enter your comment:");
+                if (content && position) {
+                    handleStartCommentThread(position.lineNumber, content);
+                }
+            },
+        });
+
+        // Logic to show a comment icon when a thread is clicked
+        editor.onMouseDown(e => {
+            console.log("🖱️ Mouse down event:", e.target);
+
+            if (e.target.type === monacoRef.current.editor.MouseTargetType.GUTTER_GLYPH_MARGIN) {
+                const lineNumber = e.target.position.lineNumber;
+                console.log("🎯 Clicked on glyph margin at line:", lineNumber);
+
+                const thread = sessionDetails?.commentThreads?.find(t =>
+                    t.lineNumber === lineNumber && t.status === 'OPEN'
+                );
+
+                if (thread) {
+                    console.log("💬 Found comment thread:", thread);
+                    setActiveCommentThread(thread);
+                } else {
+                    console.log("❌ No open comment thread found at line:", lineNumber);
+                }
+            }
+        });
+
         editor.onDidChangeCursorPosition(e => {
             publishCursorUpdate({
                 startLineNumber: e.position.lineNumber,
@@ -147,6 +184,245 @@ function EditorPage() {
                 positionColumn: selection.positionColumn
             });
         });
+    };
+
+    useEffect(() => {
+        if (!editorRef.current || !sessionDetails || !monacoRef.current) return;
+
+        console.log("🔄 Applying comment decorations for threads:", sessionDetails.commentThreads);
+
+        // Filter only OPEN threads and ensure lineNumber is valid
+        const validThreads = sessionDetails.commentThreads
+            .filter(thread => thread.status === 'OPEN' && thread.lineNumber > 0);
+
+        console.log("✅ Valid threads for decorations:", validThreads);
+
+        const decorations = validThreads.map(thread => ({
+            range: new monacoRef.current.Range(thread.lineNumber, 1, thread.lineNumber, 1),
+            options: {
+                isWholeLine: false,
+                glyphMarginClassName: 'comment-glyph', // Use consistent class name
+                glyphMarginHoverMessage: { value: `💬 Comments (${thread.comments.length})` },
+                stickiness: 1
+            }
+        }));
+
+        console.log("🎯 Created decorations:", decorations);
+
+        // Clear old decorations and apply new ones
+        oldDecorationsRef.current = editorRef.current.deltaDecorations(
+            oldDecorationsRef.current,
+            decorations
+        );
+
+        // Inject dynamic CSS for comment glyphs
+        const styleId = 'comment-glyph-styles';
+        let styleElement = document.getElementById(styleId);
+        if (!styleElement) {
+            styleElement = document.createElement('style');
+            styleElement.id = styleId;
+            document.head.appendChild(styleElement);
+        }
+
+        // Enhanced CSS for better visibility
+// Temporary test - use this instead of the SVG CSS
+        const commentGlyphCSS = `
+    .comment-glyph {
+        background-color: #FF0000 !important;
+        width: 12px !important;
+        height: 12px !important;
+        border-radius: 2px !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        display: block !important;
+        margin: 2px !important;
+    }
+`;
+
+        styleElement.innerHTML = commentGlyphCSS;
+
+        console.log("✅ Decorations applied. Count:", decorations.length);
+
+        // Force Monaco to re-render
+        setTimeout(() => {
+            if (editorRef.current) {
+                editorRef.current.layout();
+                editorRef.current.render();
+            }
+        }, 100);
+
+    }, [sessionDetails, sessionDetails?.commentThreads]);// Add dependency on commentThreads
+
+    useEffect(() => {
+        if (editorRef.current && sessionDetails?.commentThreads) {
+            console.log("🔍 DEBUG - Comprehensive check:");
+            console.log("  - Comment threads:", sessionDetails.commentThreads);
+            console.log("  - Editor ref exists:", !!editorRef.current);
+            console.log("  - Monaco ref exists:", !!monacoRef.current);
+            console.log("  - Current decorations:", oldDecorationsRef.current.length);
+
+            // Check editor layout
+            const editorLayout = editorRef.current.getLayoutInfo();
+            console.log("  - Editor layout:", editorLayout);
+            console.log("  - Glyph margin width:", editorLayout.glyphMarginWidth);
+
+            // DOM check after a brief delay
+            setTimeout(() => {
+                const glyphMargin = document.querySelector('.monaco-editor .glyph-margin');
+                console.log("  - Glyph margin element:", glyphMargin);
+
+                const commentGlyphs = document.querySelectorAll('.comment-glyph');
+                console.log("  - Comment glyph elements found:", commentGlyphs.length);
+
+                commentGlyphs.forEach((glyph, index) => {
+                    const styles = window.getComputedStyle(glyph);
+                    console.log(`  - Glyph ${index}:`, {
+                        display: styles.display,
+                        visibility: styles.visibility,
+                        backgroundImage: styles.backgroundImage,
+                        width: styles.width,
+                        height: styles.height
+                    });
+                });
+            }, 200);
+        }
+    }, [sessionDetails?.commentThreads, oldDecorationsRef.current]);
+
+    useEffect(() => {
+        if (editorRef.current && oldDecorationsRef.current.length > 0) {
+            setTimeout(() => {
+                console.log("🔍 DEBUG - Checking actual DOM structure:");
+
+                // Check the glyph margin
+                const glyphMargin = document.querySelector('.monaco-editor .glyph-margin');
+                console.log("📍 Glyph margin:", glyphMargin);
+
+                if (glyphMargin) {
+                    console.log("👶 Glyph margin children count:", glyphMargin.children.length);
+
+                    // Check each line number element
+                    Array.from(glyphMargin.children).forEach((child, index) => {
+                        const styles = window.getComputedStyle(child);
+                        console.log(`   Child ${index}:`, {
+                            className: child.className,
+                            tagName: child.tagName,
+                            lineNumber: child.getAttribute('data-line-number'),
+                            backgroundImage: styles.backgroundImage,
+                            display: styles.display,
+                            visibility: styles.visibility,
+                            width: styles.width,
+                            height: styles.height
+                        });
+                    });
+                }
+
+                // Check for comment glyphs specifically
+                const commentGlyphs = document.querySelectorAll('.comment-glyph');
+                console.log("💬 Comment glyph elements found:", commentGlyphs.length);
+
+                commentGlyphs.forEach((glyph, index) => {
+                    const styles = window.getComputedStyle(glyph);
+                    console.log(`   Comment glyph ${index}:`, {
+                        className: glyph.className,
+                        parent: glyph.parentElement?.className,
+                        backgroundImage: styles.backgroundImage,
+                        display: styles.display,
+                        visibility: styles.visibility,
+                        width: styles.width,
+                        height: styles.height,
+                        opacity: styles.opacity
+                    });
+                });
+
+            }, 500);
+        }
+    }, [oldDecorationsRef.current]);
+
+    const handleStartCommentThread = async (lineNumber, content) => {
+        const token = localStorage.getItem('jwt_token');
+
+        let username = '';
+        try {
+            const decoded = jwtDecode(token);
+            username = decoded.sub;
+        } catch (error) {
+            console.error('Error decoding token:', error);
+            setIsHistoryLoading(false);
+            return;
+        }
+        try {
+            const response = await fetch(`http://localhost:8080/session-service/api/sessions/${sessionId}/comments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`,'X-Authenticated-Username': username },
+                body: JSON.stringify({ lineNumber, content })
+            });
+            if (!response.ok) throw new Error('Failed to start thread');
+            fetchSessionDetails(token); // Refresh to show new comment icon
+        } catch (error) { alert(error.message); }
+    };
+
+    const handleReplyToThread = async (threadId, content) => {
+        const token = localStorage.getItem('jwt_token');
+        let username = '';
+        try {
+            const decoded = jwtDecode(token);
+            username = decoded.sub;
+        } catch (error) {
+            console.error('Error decoding token:', error);
+            return;
+        }
+
+        try {
+            const response = await fetch(`http://localhost:8080/session-service/api/sessions/${sessionId}/comments/${threadId}/replies`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                    'X-Authenticated-Username': username
+                },
+                body: JSON.stringify({ content })
+            });
+
+            if (!response.ok) throw new Error('Failed to reply');
+
+            // Refresh to get the latest comments
+            await fetchSessionDetails(token);
+
+        } catch (error) {
+            alert(error.message);
+            throw error; // Re-throw to handle in component
+        }
+    };
+
+    const handleResolveThread = async (threadId) => {
+        const token = localStorage.getItem('jwt_token');
+        let username = '';
+        try {
+            const decoded = jwtDecode(token);
+            username = decoded.sub;
+        } catch (error) {
+            console.error('Error decoding token:', error);
+            return;
+        }
+
+        try {
+            const response = await fetch(`http://localhost:8080/session-service/api/sessions/${sessionId}/comments/${threadId}/resolve`, {
+                method: 'PUT',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'X-Authenticated-Username': username
+                }
+            });
+
+            if (!response.ok) throw new Error('Failed to resolve thread');
+
+            setActiveCommentThread(null); // Close the panel
+            await fetchSessionDetails(token); // Refresh to remove the comment icon
+
+        } catch (error) {
+            alert(error.message);
+            throw error; // Re-throw to handle in component
+        }
     };
 
     const fetchSessionDetails = useCallback(async (token) => {
@@ -939,6 +1215,16 @@ function EditorPage() {
                         </Toast>
                     ))}
                 </ToastContainer>
+                {activeCommentThread && (
+                    <CommentThreadPanel
+                        thread={activeCommentThread}
+                        currentUser={currentUser}
+                        onReply={handleReplyToThread}
+                        onResolve={handleResolveThread}
+                        onClose={() => setActiveCommentThread(null)}
+                        isOwner={isOwner}
+                    />
+                )}
                 <div className="editor-page-container">
                     <div className="editor-container">
                         <div className="controls p-2 border-bottom border-secondary bg-dark d-flex justify-content-between align-items-center">
@@ -948,6 +1234,7 @@ function EditorPage() {
                             <div>
                                 {isOwner && <Button variant="outline-warning" size="sm" onClick={handleSaveSnapshot} disabled={isHistoryLoading} className="me-2">{isHistoryLoading ? <Spinner as="span" size="sm" animation="border" /> : '💾 Save'}</Button>}
                                 <Button variant="outline-info" size="sm" onClick={handleExplainCode} disabled={isExplaining || isExecuting} className="me-2">{isExplaining ? <Spinner as="span" size="sm" animation="border" /> : '✨ Explain'}</Button>
+                                
                                 <Button variant="success" size="sm" onClick={handleRunCode} disabled={isExecuting || isExplaining}>{isExecuting ? <Spinner as="span" size="sm" animation="border" /> : '▶️ Run'}</Button>
                                 {isOwner ? (
                                     // Owner sees Delete Session button
@@ -981,7 +1268,17 @@ function EditorPage() {
                             value={codeContent}
                             onChange={handleEditorChange}
                             onMount={handleEditorDidMount}
-                            options={{ automaticLayout: true, wordWrap: 'on', readOnly: userRole === Role.VIEWER }} />
+                            options={{
+                                automaticLayout: true,
+                                glyphMargin: true,
+                                wordWrap: 'on',
+                                readOnly: userRole === Role.VIEWER,
+                                lineNumbers: 'on',
+                                lineDecorationsWidth: 16,
+                                minimap: { enabled: false },
+                                scrollBeyondLastLine: false
+                        }}
+                        />
                     </div>
                     <div className="side-panel">
                         <Tabs activeKey={activeTab} onSelect={(k) => setActiveTab(k)} id="side-panel-tabs" className="mb-0 flex-shrink-0" fill>

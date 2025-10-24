@@ -7,9 +7,14 @@ import com.codecollab.sessionservice.dto.NotificationDTO;
 import com.codecollab.sessionservice.exception.SessionNotFoundException;
 import com.codecollab.sessionservice.exception.UnauthorizedException;
 import com.codecollab.sessionservice.model.CodeSession;
+import com.codecollab.sessionservice.model.Comment;
+import com.codecollab.sessionservice.model.CommentStatus;
+import com.codecollab.sessionservice.model.CommentThread;
 import com.codecollab.sessionservice.model.Role;
 import com.codecollab.sessionservice.model.Snapshot;
 import com.codecollab.sessionservice.repository.CodeSessionRepository;
+import com.codecollab.sessionservice.repository.CommentRepository;
+import com.codecollab.sessionservice.repository.CommentThreadRepository;
 import com.codecollab.sessionservice.repository.SnapshotRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +34,8 @@ public class SessionService {
     private final CodeSessionRepository codeSessionRepository;
     private final SnapshotRepository snapshotRepository;
     private final CollaborationServiceClient collaborationServiceClient;
+    private final CommentThreadRepository commentThreadRepository;
+    private final CommentRepository commentRepository;
     private static final Logger log = LoggerFactory.getLogger(SessionServiceApplication.class);
 
     @Transactional
@@ -292,6 +299,65 @@ public class SessionService {
         log.info("Session {} deleted successfully", uniqueId);
     }
 
+    @Transactional
+    public CommentThread startCommentThread(String uniqueId, String author, int lineNumber, String content) {
+        CodeSession session = getSessionByUniqueId(uniqueId);
+        // Security Check: User must be a participant to comment.
+        if (!session.getParticipants().containsKey(author)) {
+            throw new AccessDeniedException("Only participants can add comments.");
+        }
+
+        CommentThread newThread = CommentThread.builder()
+                .lineNumber(lineNumber)
+                .status(CommentStatus.OPEN)
+                .codeSession(session)
+                .build();
+
+        Comment firstComment = Comment.builder()
+                .author(author)
+                .content(content)
+                .commentThread(newThread)
+                .build();
+
+        newThread.getComments().add(firstComment);
+
+        return commentThreadRepository.save(newThread);
+    }
+
+    @Transactional
+    public Comment addReplyToThread(Long threadId, String author, String content) {
+        CommentThread thread = commentThreadRepository.findById(threadId)
+                .orElseThrow(() -> new RuntimeException("Comment thread not found with ID: " + threadId));
+
+        // Security Check: User must be a participant to reply.
+        CodeSession session = thread.getCodeSession();
+        if (!session.getParticipants().containsKey(author)) {
+            throw new AccessDeniedException("Only participants can reply to comments.");
+        }
+
+        Comment newComment = Comment.builder()
+                .author(author)
+                .content(content)
+                .commentThread(thread)
+                .build();
+
+        return commentRepository.save(newComment);
+    }
+
+    @Transactional
+    public CommentThread resolveCommentThread(Long threadId, String resolverUsername) {
+        CommentThread thread = commentThreadRepository.findById(threadId)
+                .orElseThrow(() -> new RuntimeException("Comment thread not found with ID: " + threadId));
+
+        // Security Check: Only the session owner can resolve threads.
+        if (!thread.getCodeSession().getOwnerUsername().equals(resolverUsername)) {
+            throw new AccessDeniedException("Only the session owner can resolve comment threads.");
+        }
+
+        thread.setStatus(CommentStatus.RESOLVED);
+        return commentThreadRepository.save(thread);
+    }
+
     private String getBoilerplateForLanguage(String language) {
         return switch (language.toLowerCase()) {
             case "java" -> """
@@ -317,6 +383,8 @@ public class SessionService {
                     """;
             default -> "// Welcome to your new CodeCollab session!";
         };
+
+
     }
 
 

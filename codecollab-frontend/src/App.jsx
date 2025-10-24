@@ -4,6 +4,8 @@ import EditorPage from './pages/EditorPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import AuthNavbar from './components/AuthNavbar';
+// In your index.js or App.js
+import './app.css';
 
 function App() {
     return (

@@ -55,6 +55,9 @@ public class CodeSession {
     @Builder.Default
     private List<Snapshot> history = new ArrayList<>();
 
+    @OneToMany(mappedBy = "codeSession", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<CommentThread> commentThreads = new ArrayList<>();
+
     public CodeSession(Object o, String uniqueId, String s, String ownerUsername) {
 
         this.uniqueId = uniqueId;
